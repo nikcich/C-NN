@@ -14,7 +14,7 @@ Basic neural network implementation using vectors, no backprop or anything
 
 using namespace std;
 
-const mutate_rate = 0.1;
+const int mutate_rate = 0.5;
 
 double sigmoid(double x)
 {
@@ -110,6 +110,19 @@ public:
         this->weights = weightsTemp;
     }
 
+    Layer(int size, int nSize, vector<vector<double>> weights){
+        this->size = size;
+        this->nextSize = nSize;
+        for (int i = 0; i < size; i++)
+        {
+            Node *new_node = new Node();
+            this->nodes.push_back(new_node);
+        }
+        this->nodes.at(this->size - 1)->setValue(1);
+
+        this->weights = weights;
+    }
+
     void input(vector<double> in)
     {
         for (int i = 0; i < in.size(); i++)
@@ -178,9 +191,30 @@ public:
         }
     }
 
-    vector<<vector<double>> copyWeights(){
+    vector<vector<double>> copyWeights(){
         return this->weights;
     }
+
+    int getSize(){
+        return this->size;
+    }
+
+    int getNextSize(){
+        return this->nextSize;
+    }
+
+    double copyBiasValue(){
+        return this->nodes[this->nodes.size()-1]->getValue();
+    }
+
+    void setWeight(vector<vector<double>> w){
+        this->weights = w;
+    }
+
+    void setBias(double n){
+        this->nodes[this->nodes.size()-1]->setValue(n);
+    }
+
 private:
     int size;
     int nextSize;
@@ -240,6 +274,29 @@ public:
         return results;
     }
 
+    Network(vector<Layer*> lyrs){
+        this->layers = lyrs;
+    }
+
+    Network(Network* old){
+        vector<Layer*> lyr;
+
+        for(int i = 0; i < this->layers.size()-1; i++){
+            vector<vector<double>> w = old->layers[i]->copyWeights();
+            int size = old->layers[i]->getSize();
+            int nSize = old->layers[i]->getNextSize();
+
+            Layer* newLyr = new Layer(size, nSize, w);
+
+            lyr.push_back(newLyr);
+        }
+
+        Layer* lastLyr = new Layer(this->layers[this->layers.size()-1]->getSize());
+        lyr.push_back(lastLyr);
+
+        this->layers = lyr;
+    }
+
     void mutate()
     {
 
@@ -255,8 +312,58 @@ public:
 
     double error = 0.0;
 
+    Network* clone(){
+        return new Network(*this);
+    }
+
+    void combine(Network* other){
+        vector<Layer*> lyrClone;
+
+        for(int i = 0; i < this->layers.size(); i++){
+            cout << i << endl;
+            Layer* curr = this->layers[i];
+            int siz = curr->getSize();
+            int nSiz = curr->getNextSize();
+            
+            vector<vector<double>> wgt;
+            double biasV;
+
+            if(i%2==0){ // Use this->layers
+                if (i < this->layers.size() - 1){
+                    wgt = curr->copyWeights();
+                    biasV = curr->copyBiasValue();
+                }
+            }else{ // use other->layers
+                if (i < this->layers.size() - 1){
+                    wgt = other->layers[i]->copyWeights();
+                    biasV = other->layers[i]->copyBiasValue();
+                }
+            }
+
+
+            Layer* newLayer;
+
+            if (i < this->layers.size() - 1)
+            {
+                newLayer = new Layer(siz, nSiz);
+                newLayer->setWeight(wgt);
+                newLayer->setBias(biasV);
+            }
+            else
+            {
+                newLayer = new Layer(siz);
+            }
+
+            lyrClone.push_back(newLayer);
+        }
+
+        this->layers = lyrClone;
+    }
+
+    bool combined = false;
 private:
     vector<Layer *> layers;
+    
 };
 
 //////////////////////////////////////////////////////////////
@@ -270,7 +377,8 @@ int main()
     vector<double> inputData = {2.0, 2.0};
 
     vector<Network *> pop;
-    int popSize = 1;
+    int popSize = 1000;
+    int generations = 100;
 
     for (int i = 0; i < popSize; i++)
     {
@@ -280,20 +388,51 @@ int main()
     std::random_device rd;
     std::default_random_engine eng(rd());
     std::uniform_real_distribution<double> distr(0, 10);
+    //std::uniform_real_distribution<int> intDistr(0, 10000);
 
+    for(int i = 0; i < generations; i++){
 
-    for(int j = 0; j < popSize; j++){
-        double n1 = 2.0;
-        double n2 = 2.0;
-        vector<double> ins = {n1, n2};
+        // Run the feed forward and get results with current values
+        int bestIdx = 0;
+        double bestErr = 100000;
 
-        Network *curr = pop[j];
+        double cumErr = 0.0;
 
-        curr->input(ins);
-        vector<double> results = curr->activate();
+        for(int j = 0; j < popSize; j++){
+            double n1 = 2.0;
+            double n2 = 2.0;
+            vector<double> ins = {n1, n2};
 
-        curr->error = abs(results[0] - (n1 * n2));
+            Network *curr = pop[j];
+
+            curr->input(ins);
+            vector<double> results = curr->activate();
+
+            curr->error = abs(results[0] - (n1 * n2));
+
+            if(curr->error < bestErr){
+                bestIdx = j;
+                bestErr = curr->error;
+            }
+            cumErr += curr->error;
+        }
+
+        for(int j = 0; j < popSize; j++){
+            if(j != bestIdx){
+                pop[j] = pop[bestIdx]->clone();
+
+                pop[j]->mutate();
+                pop[j]->mutate();
+            }
+        }
+
+        cout << "Generation #" << i << endl;
+        cout << "Average error: " << cumErr/(popSize*1.0) << endl;
+        cout << "Best Error: " << bestErr << endl;
+
     }
+
+    
     
 
     return 0;
