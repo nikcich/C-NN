@@ -14,7 +14,14 @@ Basic neural network implementation using vectors, no backprop or anything
 
 using namespace std;
 
-const int mutate_rate = 0.5;
+const double mutate_rate = 0.3;
+
+void display(vector<double> x){
+    for(int i = 0; i < x.size(); i++){
+        cout << x[i] << '\t';
+    }
+    cout << endl;
+}
 
 double sigmoid(double x)
 {
@@ -110,19 +117,6 @@ public:
         this->weights = weightsTemp;
     }
 
-    Layer(int size, int nSize, vector<vector<double>> weights){
-        this->size = size;
-        this->nextSize = nSize;
-        for (int i = 0; i < size; i++)
-        {
-            Node *new_node = new Node();
-            this->nodes.push_back(new_node);
-        }
-        this->nodes.at(this->size - 1)->setValue(1);
-
-        this->weights = weights;
-    }
-
     void input(vector<double> in)
     {
         for (int i = 0; i < in.size(); i++)
@@ -186,13 +180,9 @@ public:
 
         if (num < mutate_rate)
         {
-            Node* bias = this->nodes[this->nodes.size()-1]; // Last node
-            bias->setValue(distr(eng));
+            //Node* bias = this->nodes[this->nodes.size()-1]; // Last node
+            this->nodes[this->nodes.size()-1]->setValue(distr(eng));
         }
-    }
-
-    vector<vector<double>> copyWeights(){
-        return this->weights;
     }
 
     int getSize(){
@@ -215,11 +205,21 @@ public:
         this->nodes[this->nodes.size()-1]->setValue(n);
     }
 
+    void clone(Layer* other){
+        for(int i = 0; i < this->weights.size(); i++){
+            for(int j = 0; j < this->weights[i].size(); j++){
+                this->weights[i][j] = other->weights[i][j];
+            }
+        }
+
+    }
+
+    vector<vector<double>> weights;
 private:
     int size;
     int nextSize;
     vector<Node *> nodes;
-    vector<vector<double>> weights;
+    
 };
 
 //////////////////////////////////////////////////////////////
@@ -274,32 +274,8 @@ public:
         return results;
     }
 
-    Network(vector<Layer*> lyrs){
-        this->layers = lyrs;
-    }
-
-    Network(Network* old){
-        vector<Layer*> lyr;
-
-        for(int i = 0; i < this->layers.size()-1; i++){
-            vector<vector<double>> w = old->layers[i]->copyWeights();
-            int size = old->layers[i]->getSize();
-            int nSize = old->layers[i]->getNextSize();
-
-            Layer* newLyr = new Layer(size, nSize, w);
-
-            lyr.push_back(newLyr);
-        }
-
-        Layer* lastLyr = new Layer(this->layers[this->layers.size()-1]->getSize());
-        lyr.push_back(lastLyr);
-
-        this->layers = lyr;
-    }
-
     void mutate()
     {
-
         for (int i = 0; i < this->layers.size() - 1; i++)
         { // - 1 because not the last layer since has no weights
 
@@ -310,59 +286,21 @@ public:
         }
     }
 
-    double error = 0.0;
+    void clone(Network* other){
+        for(int i = 0; i < this->layers.size()-1; i++){
 
-    Network* clone(){
-        return new Network(*this);
-    }
-
-    void combine(Network* other){
-        vector<Layer*> lyrClone;
-
-        for(int i = 0; i < this->layers.size(); i++){
-            cout << i << endl;
             Layer* curr = this->layers[i];
-            int siz = curr->getSize();
-            int nSiz = curr->getNextSize();
-            
-            vector<vector<double>> wgt;
-            double biasV;
+            curr->clone(other->layers[i]);
 
-            if(i%2==0){ // Use this->layers
-                if (i < this->layers.size() - 1){
-                    wgt = curr->copyWeights();
-                    biasV = curr->copyBiasValue();
-                }
-            }else{ // use other->layers
-                if (i < this->layers.size() - 1){
-                    wgt = other->layers[i]->copyWeights();
-                    biasV = other->layers[i]->copyBiasValue();
-                }
-            }
-
-
-            Layer* newLayer;
-
-            if (i < this->layers.size() - 1)
-            {
-                newLayer = new Layer(siz, nSiz);
-                newLayer->setWeight(wgt);
-                newLayer->setBias(biasV);
-            }
-            else
-            {
-                newLayer = new Layer(siz);
-            }
-
-            lyrClone.push_back(newLayer);
         }
 
-        this->layers = lyrClone;
     }
 
+    double error = 0.0;
+
     bool combined = false;
-private:
     vector<Layer *> layers;
+private:
     
 };
 
@@ -373,12 +311,11 @@ private:
 int main()
 {
 
-    vector<int> layerData = {2, 4, 4, 1};
-    vector<double> inputData = {2.0, 2.0};
+    vector<int> layerData = {2, 8, 8, 1};
 
     vector<Network *> pop;
     int popSize = 1000;
-    int generations = 100;
+    int generations = 2000;
 
     for (int i = 0; i < popSize; i++)
     {
@@ -388,7 +325,6 @@ int main()
     std::random_device rd;
     std::default_random_engine eng(rd());
     std::uniform_real_distribution<double> distr(0, 10);
-    //std::uniform_real_distribution<int> intDistr(0, 10000);
 
     for(int i = 0; i < generations; i++){
 
@@ -399,8 +335,8 @@ int main()
         double cumErr = 0.0;
 
         for(int j = 0; j < popSize; j++){
-            double n1 = 2.0;
-            double n2 = 2.0;
+            double n1 = 2;
+            double n2 = 2;
             vector<double> ins = {n1, n2};
 
             Network *curr = pop[j];
@@ -417,18 +353,28 @@ int main()
             cumErr += curr->error;
         }
 
+
+
+        // for(int j = 0; j < popSize; j++){
+        //     cout << &(pop[j]->layers[0]->weights) << endl;
+        // }
+
+
         for(int j = 0; j < popSize; j++){
             if(j != bestIdx){
-                pop[j] = pop[bestIdx]->clone();
-
-                pop[j]->mutate();
+                pop[j]->clone(pop[bestIdx]);
                 pop[j]->mutate();
             }
         }
 
-        cout << "Generation #" << i << endl;
-        cout << "Average error: " << cumErr/(popSize*1.0) << endl;
-        cout << "Best Error: " << bestErr << endl;
+
+        if(i%20 == 0){
+            cout << "Generation #" << i << endl;
+            cout << "Average error: " << cumErr/(popSize*1.0) << endl;
+            cout << "Best Error: " << bestErr << endl << endl;
+        }
+        
+
 
     }
 
